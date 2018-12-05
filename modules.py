@@ -185,7 +185,7 @@ class Sequential(Module):
         g_val = gradOutput
         n = self.modules.count
         for i in range(n):
-          g_val = module[n - i - 1].backward(self.y[n - i - 1], g_val)
+          g_val = module[n - i - 1].backward(self.modules[n - i - 1], g_val)
 
         self.gradInput = g_val
         # Your code goes here. ################################################
@@ -251,18 +251,18 @@ class Linear(Module):
         
     def updateOutput(self, input):
         # Your code goes here. ################################################
-        self.output = self.output - alpha * gradInput
+        self.output = np.Add(np.dot(input, self.W.T), self.b)
         return self.output
     
     def updateGradInput(self, input, gradOutput):
         # Your code goes here. ################################################
-        self.gradInput = np.multiply(gradOutput, input)
+        self.gradInput = np.dot(gradOutput, input)
         return self.gradInput
     
     def accGradParameters(self, input, gradOutput):
         # Your code goes here. ################################################
-        self.gradW = input
-        self.gradb = 1
+        self.gradW = np.dot(input.T, gradOutput).T
+        self.gradb = np.sum(gradOutput, axis=0)
         pass
     
     def zeroGradParameters(self):
@@ -288,7 +288,7 @@ class SoftMax(Module):
         # start with normalization for numerical stability
         self.output = np.subtract(input, input.max(axis=1, keepdims=True))
         
-        self.output = np.exp(output) / np.sum(np.exp(output), axis=0)
+        self.output = np.divide(np.exp(self.output), np.sum(np.exp(self.output), axis=1, keepdims=True))
         return self.output
     
     def updateGradInput(self, input, gradOutput):
@@ -308,7 +308,7 @@ class LogSoftMax(Module):
         # start with normalization for numerical stability
         self.output = np.subtract(input, input.max(axis=1, keepdims=True))
         
-        self.output = self.output - math.log( math.fsum(math.exp(self.output)) )
+        self.output = np.subtract(self.output, np.log(np.sum(np.exp(self.output), axis=1, keepdims=True)))
         return self.output
     
     def updateGradInput(self, input, gradOutput):
@@ -330,10 +330,10 @@ class BatchNormalization(Module):
     def updateOutput(self, input):
         # Your code goes here. ################################################
         # use self.EPS please
-        self.moving_mean = self.moving_mean * alpha + np.mean(input) * (1 - alpha)
-        self.moving_variance = self.moving_variance * alpha + np.var(input) * (1 - alpha)
+        # self.moving_mean = self.moving_mean * alpha + np.mean(input) * (1 - alpha)
+        # self.moving_variance = self.moving_variance * alpha + np.var(input) * (1 - alpha)
 
-        self.output = (input - np.mean(input)) / (np.sqrt(np.var(input) + EPS))
+        # self.output = (input - np.mean(input)) / (np.sqrt(np.var(input) + EPS))
         return self.output
     
     def updateGradInput(self, input, gradOutput):
@@ -392,14 +392,18 @@ class Dropout(Module):
         self.mask = None
         
     def updateOutput(self, input):
-        self.mask = np.random.binomial(1, p, size=input.shape) / p
-        self.output = np.multiply(input, self.mask)
+		self.output = input
+		if self.training = True:
+			self.mask = np.random.uniform(0, 1, size=input.shape[0]) > self.p
+			self.output = np.multiply(input, self.mask)
         # Your code goes here. ################################################
         return  self.output
     
     def updateGradInput(self, input, gradOutput):
         # Your code goes here. ################################################
-        self.gradInput = np.multiply()
+		self.gradInput = gradOutput
+        if self.training == True:
+			self.gradInput = np.multiply(self.mask, gradOutput)
         return self.gradInput
         
     def __repr__(self):
@@ -429,7 +433,7 @@ class LeakyReLU(Module):
         self.slope = slope
         
     def updateOutput(self, input):
-        self.output = np.maximum(input, input*slope)
+        self.output = np.multiply(input, (input < 0) * (self.slope - 1) + 1) 
         return  self.output
     
     def updateGradInput(self, input, gradOutput):
@@ -450,10 +454,14 @@ class ELU(Module):
         
     def updateOutput(self, input):
         # Your code goes here. ################################################
+		self.output = np.add(np.multiply(input > 0, input), 
+                             np.multipy(input <= 0, self.alpha * np.exp(input) - self.alpha))
         return  self.output
     
     def updateGradInput(self, input, gradOutput):
         # Your code goes here. ################################################
+		self.gradInput = np.add(np.multiply(gradOutput, input > 0),
+                                np.multiply(gradOutput, np.multiply(input <= 0, np.exp(input)) * self.alpha))
         return self.gradInput
     
     def __repr__(self):
@@ -465,15 +473,34 @@ class SoftPlus(Module):
         super(SoftPlus, self).__init__()
     
     def updateOutput(self, input):
-        self.output = math.log(1 + math.exp(input))
+         limit = 30 
+        self.output = np.add(np.multiply(input > limit, input),
+                             np.multiply(input <= limit, np.log(1.0 + np.exp(input))))
         return  self.output
     
     def updateGradInput(self, input, gradOutput):
-        self.gradInput = np.multiply(gradOutput , 1/(1+math.exp(-input)))
+        self.gradInput = np.multiply(gradOutput , np.divide(1.0, 1 + np.exp(-input)))
         return self.gradInput
     
     def __repr__(self):
         return "SoftPlus"
+		
+	
+# My code goes here. ################################################
+class LogSigmoid(Module):
+    def __init__(self):
+         super(LogSigmoid, self).__init__()
+    
+    def updateOutput(self, input):
+        self.output = np.divide(1, 1 + np.exp(-input))
+        return self.output
+    
+    def updateGradInput(self, input, gradOutput):
+        self.gradInput = np.multiply(gradOutput, np.subtract(self.output, np.multiply(self.output, self.output)))
+        return self.gradInput
+    
+    def __repr__(self):
+        return "LogSigmoid"
 
 
 class Criterion(object):
@@ -495,7 +522,6 @@ class Criterion(object):
         """
             Given an input and a target, compute the gradients of the loss function
             associated to the criterion and return the result. 
-
             For consistency this function should not be overrided,
             all the code goes in `updateGradInput`.
         """
@@ -549,6 +575,7 @@ class ClassNLLCriterionUnstable(Criterion):
         input_clamp = np.clip(input, self.EPS, 1 - self.EPS)
         
         # Your code goes here. ################################################
+		self.output = -np.sum(np.multiply(target, np.log(input_clamp))) / input.shape[0]
         return self.output
 
     def updateGradInput(self, input, target):
@@ -557,6 +584,7 @@ class ClassNLLCriterionUnstable(Criterion):
         input_clamp = np.clip(input, self.EPS, 1 - self.EPS)
                 
         # Your code goes here. ################################################
+		self.gradInput = -np.divide(target, input_clamp) / input.shape[0]
         return self.gradInput
     
     def __repr__(self):
