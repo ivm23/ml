@@ -21,6 +21,12 @@ namespace AffinityPropagation
         }
     }
 
+    struct MaxPair
+    {
+        public Double FirstMax { get; set; }
+        public Double SecondMax { get; set; }
+    }
+
     class Program
     {
         const Int32 N = 196591;
@@ -73,22 +79,22 @@ namespace AffinityPropagation
         //}
         public static Int32 indexFirstMax = -1;
         public static bool fl = false;
-        static Double FindMax(Int32 v1) // v1, v2 -- vertex
+        static MaxPair FindMax(Int32 v1) // v1, v2 -- vertex
         {
-            Double sumMax = Double.MinValue;
+            Double sumMaxFirst = Double.MinValue;
+            Double sumMaxSecond = Double.MinValue;
 
             for (int k = 0; k < s_edges[v1].Count(); ++k)
             {
                 if (k == indexFirstMax)
                     continue;
-                if (sumMax < s_edges[v1][k].A + s_edges[v1][k].S)
+                if (sumMaxFirst < s_edges[v1][k].A + s_edges[v1][k].S)
                 {
-                    sumMax = s_edges[v1][k].A + s_edges[v1][k].S;
-                    if (!fl)
-                        indexFirstMax = k;
+                    sumMaxSecond = sumMaxFirst;
+                    sumMaxFirst = s_edges[v1][k].A + s_edges[v1][k].S;
                 }
             }
-            return sumMax;
+            return new MaxPair() { FirstMax = sumMaxFirst, SecondMax = sumMaxSecond };
         }
 
         static Info KK(Int32 k)
@@ -129,24 +135,6 @@ namespace AffinityPropagation
             }
         }
 
-        static Double FindSumMax(Int32 i, Int32 k) // i -- vertex, k -- index
-        {
-            Double sum = 0;
-            Int32 kv = s_edges[i][k].vertexEnd;
-
-            for (int j = 0; j < s_edges[kv].Count(); ++j)
-            {
-                Int32 jv = s_edges[kv][j].vertexEnd;
-
-                if (kv == jv || jv == i)
-                    continue;
-
-                sum += Math.Max(0, s_edges[kv][j].R);
-            }
-            return sum;
-        }
-
-
         static void Main(string[] args)
         {
             ReadEdges();
@@ -156,44 +144,48 @@ namespace AffinityPropagation
 
             for (int iter = 0; iter < 10; ++iter)
             {
+                Double[] sumMax = new Double[N];
                 for (int i = 0; i < N; ++i)
                 {
-                    Double firstMax = FindMax(i);
-                    fl = true;
-                    Double seconMax = FindMax(i);
+                    MaxPair maxPair = FindMax(i);
+                    Double firstMax = maxPair.FirstMax;
+                    Double secondMax = maxPair.SecondMax;
 
                     for (int k = 0; k < s_edges[i].Count(); ++k)
                     {
+
                         if (k == indexFirstMax)
                         {
-                            s_edges[i][k].R = s_edges[i][k].R * damping + (1 - damping) * (s_edges[i][k].S - seconMax);
+                            s_edges[i][k].R = s_edges[i][k].R * damping + (1 - damping) * (s_edges[i][k].S - secondMax);
                         }
                         else
                             s_edges[i][k].R = s_edges[i][k].R * damping + (1 - damping) * (s_edges[i][k].S - firstMax);
+
+                        sumMax[s_edges[i][k].vertexEnd] += Math.Max(0, s_edges[i][k].R);
                     }
 
                     for (int k = 0; k < s_edges[i].Count(); ++k)
                     {
+                        Int32 kv = s_edges[i][k].vertexEnd;
+                        Double m1 = Math.Max(0, s_edges[i][k].R);
+                        Double m2 = (s_edges[kv].Length > k ? Math.Max(0, s_edges[kv][k].R) : 0);
+
                         if (i != s_edges[i][k].vertexEnd)
                         {
-                            s_edges[i][k].A = s_edges[i][k].R * damping + (1 - damping) * (Math.Min(0, KK(k).R + FindSumMax(i, k)));
+                            s_edges[i][k].A = s_edges[i][k].R * damping + (1 - damping) * (Math.Min(0, KK(k).R + sumMax[kv] - m1 - m2));
                         }
                         else
                         {
-                            s_edges[i][k].A = s_edges[i][k].R * damping + (1 - damping) * FindSumMax(i, k);
+                            s_edges[i][k].A = s_edges[i][k].R * damping + (1 - damping) * (sumMax[kv] - m1 - m2);
                         }
                     }
                 }
             }
 
-            ISet<Int32> res = new HashSet<Int32>();
-
-
             for (Int32 i = 0; i < N; ++i)
             {
                 clasters_data[i] = ArgMax(i);
             }
-
             saveToFile();
         }
 
